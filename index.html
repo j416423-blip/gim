@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>미니 배구 게임 (2인용)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
+        
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f4f8;
+            font-family: 'Jua', sans-serif;
+            color: #333;
+        }
+
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            background-color: #ffffff;
+            padding: 20px;
+        }
+
+        canvas {
+            background: linear-gradient(to bottom, #87ceeb, #c3e0ff); /* 하늘색 배경 */
+            border: 4px solid #3b82f6;
+            border-radius: 8px;
+            cursor: none; /* 게임 몰입을 위해 커서 숨기기 */
+        }
+
+        #score-board {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 600px;
+            margin-bottom: 20px;
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #1f2937;
+            text-shadow: 2px 2px 0 #fff;
+        }
+
+        .player-score {
+            padding: 5px 15px;
+            border-radius: 8px;
+            background-color: #e5e7eb;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #controls {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 1rem;
+            color: #6b7280;
+        }
+        
+        .key {
+            display: inline-block;
+            background-color: #3b82f6;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            box-shadow: 0 2px 0 #1e40af;
+            margin: 0 2px;
+        }
+        
+        #message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 30px 40px;
+            border-radius: 10px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            z-index: 100;
+            display: none; /* 초기에는 숨김 */
+        }
+
+        #message-box h2 {
+            margin-top: 0;
+            color: #ef4444;
+            font-size: 2.5rem;
+        }
+
+        #message-box button {
+            background-color: #10b981;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            margin-top: 15px;
+            transition: background-color 0.3s;
+        }
+
+        #message-box button:hover {
+            background-color: #059669;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- 스코어 보드 -->
+        <div id="score-board">
+            <div class="player-score">P1: <span id="p1-score">0</span></div>
+            <div class="player-score">P2: <span id="p2-score">0</span></div>
+        </div>
+
+        <!-- 게임 캔버스 -->
+        <canvas id="volleyballCanvas"></canvas>
+
+        <!-- 조작 설명 -->
+        <div id="controls">
+            <p>
+                1P (왼쪽): <span class="key">W</span> (↑) <span class="key">S</span> (↓)
+                | 2P (오른쪽): <span class="key">↑</span> <span class="key">↓</span>
+            </p>
+        </div>
+    </div>
+    
+    <!-- 메시지 박스 (승리/재시작) -->
+    <div id="message-box">
+        <h2 id="final-message"></h2>
+        <button onclick="startGame()">다시 시작하기</button>
+    </div>
+
+    <script>
+        // 개발자 정보 (주석으로 명시)
+        /* 개발자: 창녕옥야중학교 김상욱 */
+
+        // =================================================================
+        // 캔버스 및 게임 변수 설정
+        // =================================================================
+        const canvas = document.getElementById('volleyballCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 캔버스 크기는 반응형으로 설정하되, 최대 크기를 지정합니다.
+        const setCanvasSize = () => {
+            canvas.width = Math.min(window.innerWidth * 0.9, 800);
+            canvas.height = canvas.width / 2;
+        };
+        // setCanvasSize()는 window.onload에서 호출됩니다.
+        
+        const WINNING_SCORE = 5;
+        let isGameRunning = false;
+        let p1Score = 0;
+        let p2Score = 0;
+        
+        // 플레이어 (패들) 설정. 초기 위치는 window.onload에서 캔버스 크기에 맞게 재조정됩니다.
+        const player = {
+            width: 10,
+            height: 100,
+            speed: 8,
+            p1: { x: 20, y: 0, dy: 0, color: '#ff7b7b' }, // Player 1 (Left)
+            p2: { x: 0, y: 0, dy: 0, color: '#7bcfff' } // Player 2 (Right)
+        };
+        
+        // 공 설정
+        let ball = {
+            x: 0, // 초기 위치는 resetBall에서 설정
+            y: 0,
+            radius: 10,
+            dx: 5, // 수평 속도
+            dy: 3, // 수직 속도
+            color: '#fef3c7' // 밝은 노란색/크림색
+        };
+
+        // 초기 상태로 게임을 리셋하는 함수
+        function resetGame() {
+            p1Score = 0;
+            p2Score = 0;
+            resetBall();
+            updateScoreBoard();
+            document.getElementById('final-message').textContent = '';
+            document.getElementById('message-box').style.display = 'none';
+        }
+
+        // 공을 중앙으로 리셋하는 함수
+        function resetBall(servingPlayer = 1) {
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height / 2;
+            
+            // 공의 초기 속도를 무작위로 설정 (다양한 난이도)
+            const initialDx = Math.random() > 0.5 ? 5 : -5;
+            const initialDy = (Math.random() - 0.5) * 6; // -3 ~ 3 사이
+            
+            // 공을 서브할 플레이어 방향으로 설정
+            ball.dx = servingPlayer === 1 ? initialDx : -initialDx;
+            ball.dy = initialDy;
+            
+            // 공 속도 한계 설정 (너무 빨라지는 것을 방지)
+            const MAX_SPEED = 12;
+            ball.dx = Math.min(Math.max(ball.dx, -MAX_SPEED), MAX_SPEED);
+            ball.dy = Math.min(Math.max(ball.dy, -MAX_SPEED), MAX_SPEED);
+        }
+
+        // =================================================================
+        // 그리기 함수들
+        // =================================================================
+
+        // 배경과 코트 그리기
+        function drawCourt() {
+            // 코트 아웃라인 (캔버스 경계)
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, canvas.width, canvas.height);
+            
+            // 중앙 네트 (흰색 점선)
+            ctx.beginPath();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([10, 10]); // 점선 설정
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]); // 점선 해제 (다른 요소에 영향 방지)
+            
+            // 중앙 네트 바닥 (그림자/경계)
+            ctx.fillStyle = '#60a5fa';
+            ctx.fillRect(canvas.width / 2 - 2, canvas.height - 2, 4, 4);
+        }
+
+        // 플레이어 패들 그리기
+        function drawPlayer(p) {
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x, p.y, player.width, player.height);
+            
+            // 패들에 하이라이트 추가
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fillRect(p.x, p.y, player.width, 5);
+        }
+
+        // 공 그리기
+        function drawBall() {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = ball.color;
+            ctx.fill();
+            
+            // 공 테두리 및 그림자 (입체감)
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // 스코어 업데이트
+        function updateScoreBoard() {
+            document.getElementById('p1-score').textContent = p1Score;
+            document.getElementById('p2-score').textContent = p2Score;
+        }
+
+
+        // =================================================================
+        // 업데이트/로직 함수들
+        // =================================================================
+
+        // 플레이어 위치 업데이트 (위/아래 이동)
+        function updatePlayers() {
+            // P1 업데이트
+            player.p1.y += player.p1.dy;
+            // P1 캔버스 경계 체크
+            if (player.p1.y < 0) {
+                player.p1.y = 0;
+            } else if (player.p1.y + player.height > canvas.height) {
+                player.p1.y = canvas.height - player.height;
+            }
+            
+            // P2 업데이트
+            player.p2.y += player.p2.dy;
+            // P2 캔버스 경계 체크
+            if (player.p2.y < 0) {
+                player.p2.y = 0;
+            } else if (player.p2.y + player.height > canvas.height) {
+                player.p2.y = canvas.height - player.height;
+            }
+        }
+
+        // 공 위치 업데이트 및 충돌 처리
+        function updateBall() {
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            // 1. 상단/하단 벽 충돌 (튕기기)
+            if (ball.y + ball.radius > canvas.height || ball.y - ball.radius < 0) {
+                ball.dy = -ball.dy;
+            }
+
+            // 2. 플레이어 충돌 처리
+            
+            // P1 충돌 (왼쪽)
+            if (ball.x - ball.radius < player.p1.x + player.width && // x 축 충돌
+                ball.y + ball.radius > player.p1.y && // y 축 시작점 충돌
+                ball.y - ball.radius < player.p1.y + player.height && // y 축 끝점 충돌
+                ball.dx < 0 // 공이 왼쪽으로 이동 중일 때만
+            ) {
+                ball.dx = -ball.dx; // 수평 방향 반전 (튕김)
+                // 패들 속도에 따른 수직 속도 변화 (더 재미있게)
+                const relativeY = (ball.y - (player.p1.y + player.height / 2)) / (player.height / 2);
+                ball.dy = relativeY * 5; // 최대 수직 속도 5
+                ball.dx *= 1.1; // 속도 증가 (가속)
+            }
+
+            // P2 충돌 (오른쪽)
+            if (ball.x + ball.radius > player.p2.x && // x 축 충돌
+                ball.y + ball.radius > player.p2.y && // y 축 시작점 충돌
+                ball.y - ball.radius < player.p2.y + player.height && // y 축 끝점 충돌
+                ball.dx > 0 // 공이 오른쪽으로 이동 중일 때만
+            ) {
+                ball.dx = -ball.dx; // 수평 방향 반전 (튕김)
+                // 패들 속도에 따른 수직 속도 변화
+                const relativeY = (ball.y - (player.p2.y + player.height / 2)) / (player.height / 2);
+                ball.dy = relativeY * 5; 
+                ball.dx *= 1.1; // 속도 증가 (가속)
+            }
+            
+            // 3. 득점 처리 (배구의 네트 넘기기 규칙 적용)
+            
+            // P1 코트에 공이 떨어짐 (P2 득점)
+            if (ball.x - ball.radius < 0) {
+                p2Score++;
+                updateScoreBoard();
+                checkGameOver();
+                if (isGameRunning) resetBall(2); // P2 서브
+            }
+
+            // P2 코트에 공이 떨어짐 (P1 득점)
+            else if (ball.x + ball.radius > canvas.width) {
+                p1Score++;
+                updateScoreBoard();
+                checkGameOver();
+                if (isGameRunning) resetBall(1); // P1 서브
+            }
+            
+            // 공 속도 제한 (가속으로 인한 무한 증가 방지)
+            const MAX_SPEED = 15;
+            ball.dx = Math.min(Math.max(ball.dx, -MAX_SPEED), MAX_SPEED);
+            ball.dy = Math.min(Math.max(ball.dy, -MAX_SPEED), MAX_SPEED);
+        }
+
+        // 게임 종료 확인 및 메시지 표시
+        function checkGameOver() {
+            if (p1Score >= WINNING_SCORE || p2Score >= WINNING_SCORE) {
+                isGameRunning = false;
+                const winner = p1Score >= WINNING_SCORE ? '1P' : '2P';
+                document.getElementById('final-message').textContent = `${winner} 승리!`;
+                document.getElementById('message-box').style.display = 'flex';
+                // 공 속도 0으로 설정
+                ball.dx = 0;
+                ball.dy = 0;
+            }
+        }
+
+        // =================================================================
+        // 메인 게임 루프
+        // =================================================================
+
+        function gameLoop() {
+            if (!isGameRunning) {
+                // 게임이 끝나면 루프를 멈춥니다.
+                return;
+            }
+            
+            // 1. 화면 지우기 (배경색은 CSS에서 설정)
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 2. 그리기
+            drawCourt();
+            drawPlayer(player.p1);
+            drawPlayer(player.p2);
+            drawBall();
+
+            // 3. 업데이트
+            updatePlayers();
+            updateBall();
+
+            // 다음 프레임 요청
+            requestAnimationFrame(gameLoop);
+        }
+
+        // =================================================================
+        // 이벤트 리스너 (키보드 입력)
+        // =================================================================
+
+        const keysPressed = {};
+
+        document.addEventListener('keydown', (e) => {
+            keysPressed[e.key] = true;
+            
+            // P1 (왼쪽) 이동
+            if (keysPressed['w'] || keysPressed['W']) player.p1.dy = -player.speed;
+            else if (keysPressed['s'] || keysPressed['S']) player.p1.dy = player.speed;
+            
+            // P2 (오른쪽) 이동
+            if (keysPressed['ArrowUp']) player.p2.dy = -player.speed;
+            else if (keysPressed['ArrowDown']) player.p2.dy = player.speed;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keysPressed[e.key] = false;
+            
+            // P1 멈춤
+            if (!(keysPressed['w'] || keysPressed['W'] || keysPressed['s'] || keysPressed['S'])) {
+                player.p1.dy = 0;
+            }
+            // P2 멈춤
+            if (!(keysPressed['ArrowUp'] || keysPressed['ArrowDown'])) {
+                player.p2.dy = 0;
+            }
+        });
+
+
+        // =================================================================
+        // 게임 시작 및 초기화
+        // =================================================================
+
+        function startGame() {
+            if (isGameRunning) return; // 이미 실행 중이면 무시
+
+            // 캔버스 크기 재설정 및 플레이어 위치 초기화
+            setCanvasSize();
+            player.p1.y = canvas.height / 2 - player.height / 2;
+            player.p2.x = canvas.width - player.width - 20; // P2 X 위치를 캔버스 우측에 맞게 재조정
+            player.p2.y = canvas.height / 2 - player.height / 2;
+
+            // 게임 리셋 및 시작 상태 설정
+            resetGame(); // 점수 및 공 위치 초기화
+            isGameRunning = true;
+            updateScoreBoard();
+            
+            // 게임 루프 시작
+            gameLoop();
+        }
+
+        // 창이 로드되면 게임 초기화 및 시작 준비
+        window.onload = function() {
+            // 초기 캔버스 크기 설정
+            setCanvasSize();
+            
+            // 캔버스 크기가 설정된 후 플레이어 위치 재조정
+            player.p1.y = canvas.height / 2 - player.height / 2;
+            player.p2.x = canvas.width - player.width - 20; // 캔버스 우측에서 20px 떨어진 위치
+            player.p2.y = canvas.height / 2 - player.height / 2;
+
+            // 초기 점수판 업데이트
+            updateScoreBoard();
+            
+            // 시작 메시지 표시
+            document.getElementById('final-message').innerHTML = '미니 배구 게임<br>준비 완료!<br><br>시작 버튼을 눌러주세요.';
+            document.getElementById('message-box').style.display = 'flex';
+        };
+
+        // Resize 이벤트 리스너를 추가하여 캔버스 크기 변경 시 패들 위치도 조정
+        window.addEventListener('resize', () => {
+             // 캔버스 크기 재설정
+             setCanvasSize();
+             // 플레이어 위치도 재설정 (중앙 유지)
+             player.p1.y = canvas.height / 2 - player.height / 2;
+             player.p2.x = canvas.width - player.width - 20; 
+             player.p2.y = canvas.height / 2 - player.height / 2;
+             // 공 위치도 화면 중앙으로 임시 이동 (게임 중이 아닐 때)
+             if (!isGameRunning) {
+                 ball.x = canvas.width / 2;
+                 ball.y = canvas.height / 2;
+                 // 화면을 다시 그려서 업데이트된 위치를 반영합니다.
+                 ctx.clearRect(0, 0, canvas.width, canvas.height);
+                 drawCourt();
+                 drawPlayer(player.p1);
+                 drawPlayer(player.p2);
+                 drawBall();
+             }
+        });
+    </script>
+</body>
+</html>
